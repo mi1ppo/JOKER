@@ -1,0 +1,324 @@
+.playing-card {
+  --card-w: 68px;
+  aspect-ratio: 5 / 7;
+  width: var(--card-w);
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  margin: 5px;
+  padding: 7px;
+  border: 1px solid #d7d0c2;
+  border-radius: 8px;
+  background: #fffdf7;
+  color: #191713;
+  box-shadow: 0 4px 10px rgb(0 0 0 / 25%);
+  font-family: Georgia, serif;
+  vertical-align: middle;
+}
+
+.playing-card__corner {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.playing-card__suit {
+  font-size: 1.05rem;
+}
+
+.playing-card__center {
+  align-self: center;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.playing-card__corner--bottom {
+  align-self: flex-end;
+  transform: rotate(180deg);
+}
+
+.playing-card--red {
+  color: #b4232c;
+}
+
+.playing-card--blue {
+  color: #1f5fae;
+}
+
+.playing-card--green {
+  color: #28734a;
+}
+
+.playing-card--back {
+  justify-content: center;
+  align-items: center;
+  border-color: var(--gold, #f4c95d);
+  background: repeating-linear-gradient(45deg, var(--card-back-a, #24364f) 0 6px, var(--card-back-b, #315778) 6px 12px);
+  color: var(--gold, #f4c95d);
+  font-size: 1.8rem;
+}
+
+/* Blind flop: face down with a "?" mark until the showdown. */
+.playing-card--blind::after {
+  content: "?";
+  font-weight: 700;
+}
+
+.playing-card { position: relative; }
+
+.playing-card__center--face {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.playing-card__center--face small {
+  font-size: .9rem;
+  margin-left: 2px;
+}
+
+.playing-card--highlight {
+  box-shadow: 0 0 0 3px var(--gold, #f4c95d), 0 0 18px var(--gold-glow, rgb(244 201 93 / 50%));
+}
+
+.playing-card--joker {
+  border: 3px solid #e3b341;
+  box-shadow: 0 0 14px rgb(227 179 65 / 70%);
+  animation: joker-glow 450ms ease-out;
+}
+
+.playing-card__badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #e3b341;
+  color: #3b2a00;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+}
+
+.playing-card--spy {
+  box-shadow: 0 0 0 3px #a855f7, 0 0 14px rgb(168 85 247 / 60%);
+}
+
+.playing-card__caption {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 600 10px system-ui, sans-serif;
+  color: #e9d5ff;
+  white-space: nowrap;
+}
+
+@keyframes joker-glow {
+  from { transform: scale(1.15); box-shadow: 0 0 30px rgb(227 179 65 / 100%); }
+  to { transform: scale(1); }
+}
+
+/* Event and ability cards (not playing cards): framed, icon, title, short text. */
+.chaos-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 2px solid;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.chaos-card__icon { grid-row: span 2; font-size: 2rem; }
+.chaos-card__text { font-size: .85rem; opacity: .9; }
+
+.chaos-card--event {
+  border-color: #f97316;
+  background: linear-gradient(135deg, #7c2d12, #b45309);
+}
+
+.chaos-card--ability {
+  border-color: #a78bfa;
+  background: linear-gradient(135deg, #312e81, #6d28d9);
+}
+
+/* Dealing: the card flies in from the deck. Opening: rotateY flip. Both <= 500 ms (11.4). */
+.card-deal { animation: card-deal 380ms ease-out both; }
+.card-flip { animation: card-flip 450ms ease-out both; backface-visibility: hidden; }
+
+@keyframes card-deal {
+  from { opacity: 0; transform: translate(-60px, -80px) rotate(-12deg) scale(.6); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes card-flip {
+  0% { transform: perspective(600px) rotateY(90deg); opacity: .4; }
+  100% { transform: perspective(600px) rotateY(0); opacity: 1; }
+}
+
+/* Winning combination at the showdown. */
+.playing-card--highlight { animation: win-glow 480ms ease-out; }
+
+@keyframes win-glow {
+  from { transform: translateY(-8px) scale(1.08); }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-deal, .card-flip, .playing-card--highlight, .playing-card--joker, body.shake { animation: none; }
+}
+
+body.shake { animation: shake 400ms ease-in-out; }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+:root {
+  --table-bg: radial-gradient(circle, #1a4d2e 0%, #0d2818 80%, #05100a 100%);
+  --table-border: #4a2c11;
+  --gold: #f59e0b;
+  --gold-glow: rgba(245, 158, 11, 0.4);
+  --card-w: 60px;
+  --card-h: 84px;
+}
+
+/* ==========================================================================
+   Poker Table, Cards & UI Enhancements
+   ========================================================================== */
+
+/* Покерный стол */
+.poker-table {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  height: 480px;
+  margin: 20px auto;
+  background: var(--table-bg);
+  border: 12px solid var(--table-border);
+  border-radius: 200px;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8), 0 10px 30px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Общий банк в центре стола */
+.pot-container {
+  background: rgba(0, 0, 0, 0.6);
+  padding: 8px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--gold);
+  color: #fff;
+  font-weight: bold;
+  font-size: 1.1rem;
+  box-shadow: 0 0 15px var(--gold-glow);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+}
+
+.chip-icon {
+  width: 20px;
+  height: 20px;
+  background: radial-gradient(circle, #f59e0b 40%, #b45309 100%);
+  border: 2px dashed #ffffff;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Карты на столе (Flop, Turn, River) */
+.board-cards {
+  display: flex;
+  gap: 8px;
+  min-height: calc(var(--card-h) + 10px);
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+  z-index: 2;
+}
+
+/* Места игроков вокруг стола */
+.player-seat {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #334155;
+  border-radius: 12px;
+  color: #fff;
+  min-width: 90px;
+  transition: all 0.3s ease;
+  z-index: 3;
+}
+
+.player-seat.active-turn {
+  border-color: var(--gold);
+  box-shadow: 0 0 20px var(--gold-glow);
+  transform: scale(1.08);
+}
+
+.player-seat.folded {
+  opacity: 0.4;
+  filter: grayscale(80%);
+}
+
+.player-avatar {
+  font-size: 1.5rem;
+  margin-bottom: 2px;
+}
+
+.player-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  max-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-stack {
+  font-size: 0.8rem;
+  color: var(--gold);
+  font-weight: bold;
+}
+
+/* Анимации карт */
+.playing-card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.playing-card:hover {
+  transform: translateY(-6px) scale(1.05);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 600px) {
+  .playing-card {
+    --card-w: 56px;
+    padding: 5px;
+  }
+
+  .playing-card__center {
+    font-size: 1.6rem;
+  }
+}

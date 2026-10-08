@@ -1,0 +1,18 @@
+# Secrets: GigaChat key, HTTPS keys and certificates (including the .old backups) must never be committed.
+.env
+chaos_poker/certs/*
+!chaos_poker/certs/russian_trusted_root_ca.pem
+
+# Local tool settings (may contain API keys)
+.continue/
+
+# Runtime data
+chaos_poker/media_tmp/
+chaos_poker/logs/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/

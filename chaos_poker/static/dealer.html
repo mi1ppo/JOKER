@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chaos Poker — Диллер</title>
+  <style>
+    [hidden] { display: none !important; }
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 16px; background: #111827; color: #f3f4f6; }
+    main { max-width: 980px; margin: 0 auto; }
+    .panel { background: #1f2937; border: 1px solid #374151; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    h2 { margin: 0 0 12px; font-size: 1.15rem; }
+    input, select, button, textarea { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid #4b5563; }
+    input, select, textarea { background: #0f172a; color: #f8fafc; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 64px; }
+    button { background: #fbbf24; color: #111827; cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: .4; cursor: default; }
+    button.secondary { background: #374151; color: #f3f4f6; }
+    button.danger { background: #ef4444; color: white; }
+    button.ok { background: #22c55e; color: #052e16; }
+    ul { padding-left: 18px; }
+    .muted { color: #94a3b8; }
+    .error { color: #fca5a5; }
+    img.preview { max-width: 100%; max-height: 60vh; border-radius: 12px; margin-top: 12px; border: 1px solid #4b5563; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .task { border: 1px solid #374151; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+    .task.review { border-color: #fbbf24; }
+    .decree { border: 2px solid #a16207; background: #422006; border-radius: 10px; padding: 8px 12px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Панель диллера</h1>
+    <p id="status" class="muted">Подключение…</p>
+
+    <section class="panel" id="join-panel" hidden>
+      <form id="join-form" class="row">
+        <input id="name" required maxlength="40" placeholder="Имя диллера">
+        <button type="submit">Подключиться</button>
+      </form>
+    </section>
+
+    <div id="dealer-ui" hidden>
+      <section class="panel">
+        <div class="row">
+          <strong id="hand-info"></strong>
+          <span style="flex:1"></span>
+          <button id="pause-btn" class="secondary" type="button">Пауза</button>
+        </div>
+        <ul id="players"></ul>
+      </section>
+
+      <section class="panel" id="review-panel">
+        <h2>На проверке</h2>
+        <div id="review-list"><p class="muted">Пока ничего.</p></div>
+      </section>
+
+      <section class="panel">
+        <h2>Выдать задание</h2>
+        <div class="row">
+          <select id="task-target"></select>
+          <select id="task-kind">
+            <option value="penalty">Штраф</option>
+            <option value="bonus">Бонус (награда 2 BB)</option>
+          </select>
+          <select id="task-source">
+            <option value="bank">Из банка</option>
+            <option value="custom">Свой текст</option>
+            <option value="ai">ИИ</option>
+          </select>
+          <select id="task-difficulty">
+            <option value="mild">Мягкое</option>
+            <option value="medium" selected>Среднее</option>
+            <option value="spicy">Острое</option>
+          </select>
+          <label id="photo-label"><input type="checkbox" id="task-photo"> Фото-задание</label>
+        </div>
+        <textarea id="task-text" maxlength="300" placeholder="Текст задания" hidden></textarea>
+        <div class="row" style="margin-top:10px;"><button id="task-btn" type="button">Выдать задание</button></div>
+        <h3>Активные задания</h3>
+        <div id="open-tasks"><p class="muted">Нет активных заданий.</p></div>
+      </section>
+
+      <section class="panel" id="activity-panel">
+        <h2>Физическая активность</h2>
+        <p id="activity-off" class="muted" hidden>Активности выключены в настройках лобби.</p>
+        <div class="row" id="activity-start">
+          <select id="activity-type">
+            <option value="shake_battle">📳 Шейк-баттл (двое)</option>
+            <option value="freeze">🧊 Замри (все)</option>
+            <option value="duel">✊ Дуэль (двое)</option>
+            <option value="squats">🏋️ Приседания (штраф)</option>
+            <option value="standing_table">🧍 Стоячий стол</option>
+          </select>
+          <select id="activity-p1"></select>
+          <select id="activity-p2"></select>
+          <button id="activity-btn" type="button">Запустить</button>
+        </div>
+        <p class="muted">Датчики не нужны: вы сами смотрите и решаете, кто победил или дёрнулся.</p>
+        <div id="activity-active"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Событие на следующую раздачу</h2>
+        <div class="row">
+          <select id="event-select">
+            <option value="">🎲 Случайное</option>
+            <option value="mirror">Зеркало</option>
+            <option value="double_stakes">Двойной кон</option>
+            <option value="spy">Шпион</option>
+            <option value="carousel">Карусель</option>
+            <option value="blind_flop">Слепой флоп</option>
+            <option value="wealth_tax">Налог на богатых</option>
+            <option value="joker">Джокер</option>
+          </select>
+          <button id="event-btn" type="button">Запустить событие</button>
+        </div>
+        <p id="next-event" class="muted"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Указ</h2>
+        <div class="row">
+          <select id="decree-select">
+            <option value="bets_multiple_of_bb">📏 Ставки кратны блайнду</option>
+            <option value="raise_cap">✋ Не больше двух рейзов за круг</option>
+            <option value="silence">🤐 Тишина (о картах ни слова)</option>
+            <option value="free">📜 Свободный указ</option>
+          </select>
+          <button id="decree-btn" type="button">Объявить</button>
+          <button id="decree-cancel" class="secondary" type="button">Отменить указ</button>
+        </div>
+        <textarea id="decree-text" maxlength="200" placeholder="Текст свободного указа" hidden></textarea>
+        <p id="decree-cooldown" class="muted"></p>
+        <div id="active-decree" class="decree" hidden></div>
+      </section>
+
+      <section class="panel">
+        <h2>Штраф в фишках</h2>
+        <div class="row">
+          <select id="fine-target"></select>
+          <input id="fine-amount" type="number" min="1" style="width:110px">
+          <button id="fine-btn" class="danger" type="button">Оштрафовать</button>
+          <button id="silence-fine-btn" class="secondary" type="button">🤐 Нарушил тишину (1 BB)</button>
+        </div>
+        <p class="muted">Не больше 2 BB за раз. Фишки уходят в банк следующей раздачи.</p>
+      </section>
+    </div>
+
+    <p id="error" class="error"></p>
+  </main>
+
+  <script src="/static/js/client.js"></script>
+  <script>
+    const { esc, toast, STREETS, STATUSES } = window.Chaos;
+    const TOKEN_KEY = 'chaos_dealer_token';
+    const $ = selector => document.querySelector(selector);
+    const joinToken = new URLSearchParams(location.search).get('token');
+    const status = $('#status');
+
+    let state = null;
+    let channel = null;
+
+    const nameOf = id => id === 'all' ? 'все' : state?.players.find(player => player.id === id)?.name || id;
+    const bigBlind = () => state?.game?.big_blind || 20;
+    const mediaUrl = url => `${url}?token=${encodeURIComponent(localStorage.getItem(TOKEN_KEY) || '')}`;
+    // Typed comments survive re-renders of the review list.
+    const comments = {};
+
+    function fillPlayerSelect(select, { random = false } = {}) {
+      const selected = select.value;
+      const options = state.players.map(player => `<option value="${esc(player.id)}">${esc(player.avatar)} ${esc(player.name)}</option>`);
+      if (random) options.unshift('<option value="random">🎲 Случайный игрок</option>');
+      select.innerHTML = options.join('');
+      if (selected && [...select.options].some(option => option.value === selected)) select.value = selected;
+    }
+
+    function renderTable() {
+      const game = state.game;
+      $('#players').innerHTML = state.players.map(player => {
+        const turn = game?.current_player_id === player.id ? ' ← ход' : '';
+        const flag = STATUSES[player.status] ? ` · ${STATUSES[player.status]}` : '';
+        return `<li>${esc(player.avatar)} ${esc(player.name)} — ${player.stack}${esc(flag)}${turn}</li>`;
+      }).join('');
+      $('#hand-info').textContent = game ? `Раздача №${game.hand_number} · ${STREETS[game.street] || game.street} · блайнды ${game.small_blind}/${game.big_blind}` : 'Лобби';
+      $('#pause-btn').textContent = state.paused ? 'Продолжить' : 'Пауза';
+      $('#pause-btn').disabled = !state.game_started || state.game_over;
+      fillPlayerSelect($('#task-target'), { random: true });
+      fillPlayerSelect($('#fine-target'));
+      const fine = $('#fine-amount');
+      fine.max = 2 * bigBlind();
+      if (!fine.value) fine.value = bigBlind();
+    }
+
+    function taskCard(task, { review = false } = {}) {
+      const kind = task.kind === 'bonus' ? `бонус +${task.reward}` : 'штраф';
+      const type = task.task_type === 'photo' ? '📷 ' : '';
+      const statuses = { pending: 'выполняется', pending_review: 'ждёт вашего решения', voting: 'голосование' };
+      const retry = task.attempts > 0 ? ' · повторная попытка' : '';
+      return `<div class="task${review ? ' review' : ''}">
+        <strong>${type}${esc(task.title)}</strong> — ${esc(nameOf(task.player_id))} (${kind})<br>
+        <span class="muted">${esc(statuses[task.status] || task.status)}${retry}</span>
+        ${task.submission?.url ? `<br><img class="preview" src="${esc(mediaUrl(task.submission.url))}" alt="Фото на проверке">` : ''}
+        ${review ? `<input class="review-comment" data-comment-for="${esc(task.id)}" maxlength="200" placeholder="Комментарий судьи (для альбома)" style="width:100%;box-sizing:border-box;margin-top:8px">` : ''}
+        <div class="row" style="margin-top:8px;">
+          <button type="button" class="ok" data-review="${esc(task.id)}" data-accepted="1">Принять</button>
+          <button type="button" class="danger" data-review="${esc(task.id)}" data-accepted="0">Отклонить</button>
+        </div>
+      </div>`;
+    }
+
+    function renderTasks() {
+      const open = state.tasks.filter(task => ['pending', 'pending_review', 'voting'].includes(task.status));
+      const review = open.filter(task => task.status === 'pending_review');
+      const focused = document.activeElement?.dataset?.commentFor;
+      $('#review-list').innerHTML = review.map(task => taskCard(task, { review: true })).join('') || '<p class="muted">Пока ничего.</p>';
+      document.querySelectorAll('[data-comment-for]').forEach(input => {
+        input.value = comments[input.dataset.commentFor] || '';
+        input.addEventListener('input', () => { comments[input.dataset.commentFor] = input.value; });
+        if (input.dataset.commentFor === focused) input.focus();
+      });
+      const rest = open.filter(task => task.status !== 'pending_review');
+      $('#open-tasks').innerHTML = rest.map(task => taskCard(task)).join('') || '<p class="muted">Нет активных заданий.</p>';
+      // Photo tasks exist only with a human dealer (8.2, 8.3).
+      $('#photo-label').hidden = state.settings.dealer_mode !== 'human';
+    }
+
+    function renderDecree() {
+      const decree = state.decree;
+      const box = $('#active-decree');
+      box.hidden = !decree;
+      if (decree) box.textContent = `${decree.icon} ${decree.title}: ${decree.description} (с раздачи №${decree.hand_number})`;
+      const cooldown = state.decree_cooldown || 0;
+      $('#decree-btn').disabled = cooldown > 0 || !state.game_started || state.game_over;
+      $('#decree-cancel').disabled = !decree;
+      $('#decree-cooldown').textContent = cooldown > 0 ? `Следующий указ можно объявить через ${cooldown} разд.` : '';
+      $('#silence-fine-btn').hidden = decree?.id !== 'silence';
+    }
+
+    function renderActivity() {
+      const off = state.settings.physical_activity === 'off';
+      $('#activity-off').hidden = !off;
+      $('#activity-start').hidden = off;
+      const type = $('#activity-type').value;
+      const pairs = ['shake_battle', 'duel'].includes(type);
+      const single = ['squats', 'standing_table'].includes(type);
+      fillPlayerSelect($('#activity-p1'), { random: true });
+      fillPlayerSelect($('#activity-p2'), { random: true });
+      $('#activity-p1').hidden = !(pairs || single);
+      $('#activity-p2').hidden = !pairs;
+      const activity = state.activity;
+      const box = $('#activity-active');
+      if (!activity || !activity.id) { box.innerHTML = ''; return; }
+      const names = activity.players.map(nameOf).join(', ');
+      if (activity.status !== 'active') {
+        box.innerHTML = `<p class="muted">Последняя: ${esc(activity.icon)} ${esc(activity.title)} — ${activity.status === 'done' ? 'завершена' : 'отменена'}</p>`;
+        return;
+      }
+      let controls = '';
+      if (activity.type === 'shake_battle') {
+        controls = activity.players.map(id => `<button type="button" class="ok" data-winner="${esc(id)}">🏆 ${esc(nameOf(id))}</button>`).join('');
+      } else if (activity.type === 'freeze') {
+        controls = activity.players.map(id => `<label><input type="checkbox" data-mover="${esc(id)}"> ${esc(nameOf(id))} дёрнулся</label>`).join('')
+          + '<button type="button" class="ok" id="freeze-confirm">Подтвердить</button>';
+      } else if (activity.type === 'duel') {
+        controls = `<span class="muted">Жест выбрали: ${esc(activity.picked.map(nameOf).join(', ') || 'никто')} · раунд ${activity.round}</span>`;
+      }
+      box.innerHTML = `<div class="task review"><strong>${esc(activity.icon)} ${esc(activity.title)}</strong> — ${esc(names)}
+        <br><span class="muted">${esc(activity.description)}</span>
+        <div class="row" style="margin-top:8px">${controls}<button type="button" class="secondary" id="activity-cancel">Отменить</button></div></div>`;
+    }
+
+    function render(next) {
+      state = next;
+      status.textContent = state.game_over ? 'Игра окончена' : 'Диллер подключён';
+      renderTable();
+      renderTasks();
+      renderActivity();
+      renderDecree();
+      const queued = state.next_event;
+      const current = state.event.id !== 'none' ? `Сейчас: ${state.event.title}. ` : '';
+      $('#next-event').textContent = current + (queued ? `В очереди: ${queued.title}` : 'Очередь пуста — событие выберется по уровню хаоса');
+    }
+
+    function start(sessionToken) {
+      $('#join-panel').hidden = true;
+      $('#dealer-ui').hidden = false;
+      channel = window.Chaos.connect(sessionToken, message => {
+        if (message.type === 'state') render(message.payload);
+        else if (message.type === 'event_revealed') toast(`Событие: ${message.payload.title}`);
+        else if (message.type === 'activity_result') toast(message.payload.text);
+        else if (message.type === 'photo_ready_for_review') { toast('📷 Новое фото на проверке'); navigator.vibrate?.(150); }
+        else if (message.type === 'private_notice' && message.payload.queued_event) toast(`В очереди: ${message.payload.queued_event.title}`);
+      }, {
+        onUnauthorized() {
+          localStorage.removeItem(TOKEN_KEY);
+          status.textContent = 'Сессия устарела';
+        },
+      });
+    }
+
+    $('#join-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const response = await fetch('/api/join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: joinToken, name: $('#name').value, agreed_to_terms: true }),
+      });
+      if (!response.ok) {
+        status.textContent = 'Ссылка недействительна (QR диллера одноразовый)';
+        return;
+      }
+      const data = await response.json();
+      localStorage.setItem(TOKEN_KEY, data.session_token);
+      render(data.state);
+      start(data.session_token);
+    });
+
+    $('#task-source').addEventListener('change', () => { $('#task-text').hidden = $('#task-source').value !== 'custom'; });
+    $('#decree-select').addEventListener('change', () => { $('#decree-text').hidden = $('#decree-select').value !== 'free'; });
+
+    $('#task-btn').addEventListener('click', () => {
+      const source = $('#task-source').value;
+      channel?.send('dealer_issue_task', {
+        target_id: $('#task-target').value,
+        kind: $('#task-kind').value,
+        source,
+        text: source === 'custom' ? $('#task-text').value : null,
+        photo: $('#task-photo').checked && state.settings.dealer_mode === 'human',
+        difficulty: $('#task-difficulty').value,
+      });
+      if (source === 'custom') $('#task-text').value = '';
+    });
+
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-review]');
+      if (!button) return;
+      const taskId = button.dataset.review;
+      channel?.send('dealer_review', { task_id: taskId, accepted: button.dataset.accepted === '1', comment: comments[taskId] || null });
+      delete comments[taskId];
+    });
+
+    $('#activity-type').addEventListener('change', () => state && renderActivity());
+    $('#activity-btn').addEventListener('click', () => {
+      const type = $('#activity-type').value;
+      const picks = [$('#activity-p1').value, $('#activity-p2').value];
+      let players = null;
+      if (['shake_battle', 'duel'].includes(type) && !picks.includes('random')) players = picks;
+      if (['squats', 'standing_table'].includes(type) && picks[0] !== 'random') players = [picks[0]];
+      channel?.send('dealer_start_activity', { type, players });
+    });
+    $('#activity-active').addEventListener('click', event => {
+      const winner = event.target.closest('[data-winner]')?.dataset.winner;
+      if (winner) channel?.send('activity_resolve', { winner_id: winner });
+      if (event.target.id === 'freeze-confirm') {
+        const movers = [...document.querySelectorAll('[data-mover]:checked')].map(input => input.dataset.mover);
+        channel?.send('activity_resolve', { movers });
+      }
+      if (event.target.id === 'activity-cancel') channel?.send('activity_cancel');
+    });
+    $('#event-btn').addEventListener('click', () => channel?.send('dealer_trigger_event', { event_id: $('#event-select').value || null }));
+    $('#decree-btn').addEventListener('click', () => {
+      const decreeId = $('#decree-select').value;
+      channel?.send('dealer_decree', { decree_id: decreeId, text: decreeId === 'free' ? $('#decree-text').value : null });
+    });
+    $('#decree-cancel').addEventListener('click', () => channel?.send('dealer_decree', { decree_id: 'none' }));
+    $('#fine-btn').addEventListener('click', () => {
+      channel?.send('dealer_fine', { target_id: $('#fine-target').value, amount: Number($('#fine-amount').value) });
+    });
+    $('#silence-fine-btn').addEventListener('click', () => {
+      channel?.send('dealer_fine', { target_id: $('#fine-target').value, amount: bigBlind(), reason: 'нарушение тишины' });
+    });
+    $('#pause-btn').addEventListener('click', () => channel?.send('dealer_pause'));
+
+    (async () => {
+      const saved = localStorage.getItem(TOKEN_KEY);
+      if (saved) {
+        const response = await fetch(`/api/session?token=${encodeURIComponent(saved)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.role === 'dealer') {
+            render(data.state);
+            start(saved);
+            return;
+          }
+        }
+        localStorage.removeItem(TOKEN_KEY);
+      }
+      $('#join-panel').hidden = !joinToken;
+      status.textContent = joinToken ? 'Введите имя' : 'Отсканируйте QR-код диллера на экране ведущего';
+    })();
+  </script>
+</body>
+</html>

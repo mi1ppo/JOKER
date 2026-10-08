@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chaos Poker — Игрок</title>
+  <link rel="stylesheet" href="/static/css/cards.css">
+  <style>
+    [hidden] { display: none !important; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
+    main { max-width: 720px; margin: 0 auto; padding-bottom: 120px; }
+    .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    input, button, select { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; }
+    input, select { background: #0b1220; color: inherit; }
+    button { background: #f59e0b; color: #111827; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .35; cursor: default; }
+    button.secondary { background: #334155; color: #e2e8f0; }
+    .muted { color: #94a3b8; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .actions button { flex: 1 1 28%; }
+    .your-turn { outline: 2px solid #f59e0b; }
+    .avatars button { font-size: 1.4rem; padding: 6px 10px; background: #1e293b; }
+    .avatars button.selected { background: #f59e0b; }
+    .ability { background: linear-gradient(135deg, #4338ca, #7c3aed); color: #fff; border: 1px solid #a78bfa; }
+    .ability.used { background: #374151; border-color: #4b5563; color: #9ca3af; text-decoration: line-through; }
+    .side-bet { background: #134e4a; color: #ecfeff; border: 1px solid #14b8a6; text-align: left; }
+    #players li { margin: 4px 0; }
+    #players .current { color: #fbbf24; font-weight: 700; }
+    img.preview { max-width: 100%; border-radius: 12px; margin-top: 10px; }
+    .photo-button { display: inline-block; background: #f59e0b; color: #111827; font-weight: 600; padding: 12px 16px; border-radius: 8px; cursor: pointer; }
+    .reaction { background: #1e293b; font-size: 1.3rem; padding: 6px 10px; }
+    .reaction.mine { background: #f59e0b; }
+    .gallery-item { margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Chaos Poker</h1>
+    <div class="row"><p id="status" class="muted" style="flex:1">Подключение…</p><button type="button" class="secondary" id="sound-toggle"></button></div>
+
+    <form id="join-form" class="panel" hidden>
+      <input id="name" required maxlength="40" placeholder="Ваше имя" style="width:100%;box-sizing:border-box">
+      <p class="muted">Аватар:</p>
+      <div class="row avatars" id="avatars"></div>
+      <label style="display:block; margin-top:12px;">
+        <input id="consent" type="checkbox" required>
+        Я согласен на использование камеры и датчиков движения и на показ моих фото на общем экране.
+        Никнеймы и ход раздач могут передаваться ИИ-сервису (карманные карты и фото не передаются).
+      </label>
+      <button type="submit" style="margin-top:12px;">Войти</button>
+    </form>
+
+    <div id="decree-box" class="panel" style="border-color:#a16207;background:#422006" hidden></div>
+    <section class="panel" id="game-panel" hidden>
+      <p><strong id="street"></strong> · Банк: <strong id="pot"></strong> · Блайнды <span id="blinds"></span></p>
+      <div id="event-box" hidden>
+        <div id="event-card"></div>
+        <p id="event-info" class="muted"></p>
+        <div id="veto-box" class="row" hidden>
+          <span>Окно вето: <strong data-role="phase-left"></strong> с</span>
+          <button type="button" id="veto-btn" class="ability">🚫 Вето</button>
+        </div>
+        <div id="carousel-box" hidden>
+          <p>🎠 Выберите карту, которую передадите игроку слева (<strong data-role="phase-left"></strong> с, потом — случайная):</p>
+          <div class="row" id="carousel-cards"></div>
+        </div>
+      </div>
+      <div class="board-cards" id="board-cards"></div>
+      <p id="turn-status"></p>
+      <div id="hand-panel" class="panel">
+        <div>Ваши карты: <span id="hole-cards"></span></div>
+        <p>Стек: <strong id="my-stack"></strong> <span id="my-status" class="muted"></span></p>
+        <div class="row actions" id="player-actions">
+          <button type="button" data-kind="fold">Фолд</button>
+          <button type="button" data-kind="check">Чек</button>
+          <button type="button" data-kind="call">Колл</button>
+          <button type="button" data-kind="all_in">Олл-ин</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input id="raise-range" type="range" style="flex:1">
+          <button type="button" id="raise-btn">Рейз до <span id="raise-value"></span></button>
+        </div>
+      </div>
+      <div id="side-bets-panel" hidden>
+        <p class="muted">Побочная ставка (<span id="side-stake"></span> фишек, до первого хода префлопа) · пул: <strong id="side-pool"></strong></p>
+        <div class="row" id="side-bets"></div>
+      </div>
+      <div id="bribe-panel" hidden>
+        <p class="muted">💰 Взятка судье-ИИ (фишки в любом случае уйдут в банк следующей раздачи):</p>
+        <div class="row">
+          <input id="bribe-amount" type="number" min="1" style="width:110px">
+          <select id="bribe-wish">
+            <option value="hint">Подсказка о раздаче</option>
+            <option value="change_event">Замена события</option>
+          </select>
+          <button type="button" class="secondary" id="bribe-btn">Предложить</button>
+        </div>
+      </div>
+      <div id="abilities-panel">
+        <p class="muted">Способности (одна за круг торгов):</p>
+        <div class="row" id="abilities"></div>
+        <div class="row" id="ability-target" hidden style="margin-top:8px;">
+          <select id="target-select"></select>
+          <button type="button" id="ability-confirm">Применить</button>
+          <button type="button" class="secondary" id="ability-cancel">Отмена</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="comment-box" style="border-color:#7c3aed" hidden></section>
+    <section class="panel" id="last-hand" hidden></section>
+    <section class="panel" id="results" hidden></section>
+
+    <section class="panel" id="activity-panel" hidden>
+      <h2 id="activity-title"></h2>
+      <p id="activity-desc"></p>
+      <p class="muted" id="activity-meta"></p>
+      <div class="row" id="activity-controls"></div>
+    </section>
+
+    <section class="panel" id="task-panel" hidden>
+      <h2>Задания</h2>
+      <div id="task-info"></div>
+      <div id="photo-controls" hidden>
+        <label class="photo-button">📷 Сделать фото
+          <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden>
+        </label>
+        <p id="photo-status" class="muted"></p>
+        <img id="photo-preview" class="preview" hidden alt="Ваше фото">
+      </div>
+    </section>
+
+    <section class="panel" id="showcase" hidden>
+      <h3 id="showcase-title"></h3>
+      <img id="showcase-img" class="preview" alt="Принятое фото">
+      <div class="row" id="showcase-reactions" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel" id="gallery-panel" hidden>
+      <h3>Фото вечера</h3>
+      <div id="gallery"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Игроки</h3>
+      <ul id="players"></ul>
+    </section>
+  </main>
+
+  <script src="/static/js/cards.js"></script>
+  <script src="/static/js/client.js"></script>
+  <script>
+    const { esc, toast, STREETS, STATUSES } = window.Chaos;
+    const TOKEN_KEY = 'chaos_session_token';
+    const ABILITIES = {
+      peek: { title: 'Подглядеть', icon: '👁', target: true },
+      redraw: { title: 'Пересдача', icon: '🔄', card: true },
+      veto: { title: 'Вето', icon: '🚫' },
+      freeze: { title: 'Заморозка', icon: '🧊', target: true },
+      steal: { title: 'Воровство', icon: '🦝', target: true },
+    };
+    const AVATARS = ['🃏', '🦊', '🐻', '🐸', '🦁', '🐙', '🤠', '👽', '🐱', '🦄'];
+    const params = new URLSearchParams(location.search);
+    const joinToken = params.get('token');
+    const $ = selector => document.querySelector(selector);
+    const status = $('#status');
+
+    let state = null;
+    let channel = null;
+    let wasMyTurn = false;
+    let pendingAbility = null;
+    let avatar = AVATARS[0];
+    let freshCard = null;  // new card after a redraw, highlighted for a moment
+    let photoTaskId = null;
+    let lastCelebrated = null;  // hand number of the last win we played a sound for
+    let uploading = false;
+
+    $('#avatars').innerHTML = AVATARS.map(item => `<button type="button" data-avatar="${item}">${item}</button>`).join('');
+    const markAvatar = () => document.querySelectorAll('#avatars button').forEach(button => {
+      button.classList.toggle('selected', button.dataset.avatar === avatar);
+    });
+    $('#avatars').addEventListener('click', event => {
+      if (!event.target.dataset.avatar) return;
+      avatar = event.target.dataset.avatar;
+      markAvatar();
+    });
+    markAvatar();
+
+    const cardOptions = () => ({ fourColor: Boolean(state?.settings?.four_color_deck) });
+    const nameOf = id => state?.players.find(player => player.id === id)?.name || id;
+
+    function renderPlayers() {
+      const game = state.game;
+      $('#players').innerHTML = state.players.map(player => {
+        const flags = [
+          game?.dealer_player_id === player.id ? 'Ⓓ' : '',
+          STATUSES[player.status] || '',
+          player.street_commitment ? `ставка ${player.street_commitment}` : '',
+          player.connected ? '' : 'офлайн',
+        ].filter(Boolean).join(' · ');
+        const current = game?.current_player_id === player.id ? 'current' : '';
+        return `<li class="${current}">${esc(player.avatar)} ${esc(player.name)} — ${player.stack} ${flags ? `<span class="muted">(${esc(flags)})</span>` : ''}</li>`;
+      }).join('');
+    }
+
+    function renderGame() {
+      const game = state.game;
+      const you = state.you;
+      $('#game-panel').hidden = !game || !you || state.game_over;
+      if (!game || !you) return;
+      const me = state.players.find(player => player.id === you.id);
+      $('#street').textContent = STREETS[game.street] || game.street;
+      $('#pot').textContent = game.pot_total;
+      $('#blinds').textContent = `${game.small_blind}/${game.big_blind}`;
+      renderCardsInto($('#board-cards'), game.board, cardOptions(), boardMarks(game.board, state.event), { flip: true });
+      const spy = state.event.spy;
+      const holeMarks = you.hole_cards.map((_, index) => spy && spy.player_id === you.id && spy.card_index === index ? 'spy' : null);
+      renderCardsInto($('#hole-cards'), you.hole_cards, cardOptions(), holeMarks,
+        { highlight: freshCard ? new Set([freshCard]) : null });
+      $('#my-stack').textContent = me?.stack ?? '';
+      $('#my-status').textContent = STATUSES[me?.status] || '';
+
+      const legal = you.legal_actions || null;
+      const myTurn = Boolean(legal);
+      $('#hand-panel').classList.toggle('your-turn', myTurn);
+      $('#turn-status').textContent = state.paused
+        ? 'Игра на паузе'
+        : state.phase === 'event_reveal' ? 'Событие раздачи! Сейчас откроется окно вето'
+        : state.phase === 'carousel' ? 'Карусель: все выбирают карту'
+        : myTurn ? `Ваш ход! Осталось ~${game.turn_seconds_left ?? '?'} с`
+        : game.current_player_id ? `Ходит ${nameOf(game.current_player_id)}` : '';
+      if (myTurn && !wasMyTurn) { navigator.vibrate?.(200); window.Chaos.sound('turn'); }
+      wasMyTurn = myTurn;
+
+      document.querySelectorAll('#player-actions button').forEach(button => {
+        button.disabled = !legal?.[button.dataset.kind];
+      });
+      const callButton = $('#player-actions [data-kind="call"]');
+      callButton.textContent = legal?.call ? `Колл ${legal.to_call}` : 'Колл';
+      const range = $('#raise-range');
+      $('#raise-btn').disabled = !legal?.raise;
+      range.disabled = !legal?.raise;
+      if (legal?.raise) {
+        range.min = legal.min_raise_to;
+        range.max = legal.max_raise_to;
+        range.step = 1;
+        if (+range.value < legal.min_raise_to || +range.value > legal.max_raise_to) range.value = legal.min_raise_to;
+      }
+      $('#raise-value').textContent = legal?.raise ? range.value : '';
+
+      const canUse = state.phase === 'playing' && !['folded', 'out'].includes(me?.status) && !['showdown', 'complete'].includes(game.street);
+      $('#abilities').innerHTML = you.abilities.map(id => {
+        const ability = ABILITIES[id] || { title: id, icon: '✨' };
+        // Veto works only in the veto window, the other abilities only during betting.
+        const enabled = id === 'veto' ? state.phase === 'event_reveal' : canUse;
+        return `<button type="button" class="ability" data-ability="${esc(id)}" ${enabled ? '' : 'disabled'}>${ability.icon} ${esc(ability.title)}</button>`;
+      }).join('') + (you.used_abilities || []).map(id => {
+        const ability = ABILITIES[id] || { title: id, icon: '✨' };
+        return `<button type="button" class="ability used" disabled>${ability.icon} ${esc(ability.title)}</button>`;
+      }).join('') || '<span class="muted">Нет способностей</span>';
+      renderSideBets();
+    }
+
+    function renderSideBets() {
+      const bets = state.game?.side_bets;
+      const panel = $('#side-bets-panel');
+      const mine = bets?.bets?.[state.you?.id];
+      panel.hidden = !bets?.enabled || !bets.offers.length || !['playing', 'carousel'].includes(state.phase)
+        || (!bets.open && !mine && !bets.pool);
+      if (panel.hidden) return;
+      $('#side-stake').textContent = bets.stake;
+      $('#side-pool').textContent = bets.pool;
+      if (mine) {
+        const offer = bets.offers.find(item => item.id === mine);
+        $('#side-bets').innerHTML = `<span>Ваша ставка: «${esc(offer?.text || mine)}»</span>`;
+        return;
+      }
+      $('#side-bets').innerHTML = bets.open
+        ? bets.offers.map(offer => `<button type="button" class="side-bet" data-bet="${esc(offer.id)}">🎲 ${esc(offer.text)}</button>`).join('')
+        : '<span class="muted">Приём ставок закрыт</span>';
+    }
+
+    function renderEvent() {
+      const event = state.event;
+      const box = $('#event-box');
+      box.hidden = event.id === 'none' || state.game_over;
+      if (box.hidden) return;
+      $('#event-card').replaceChildren(renderEventCard(event));
+      if (event.ai_explanation) {
+        const why = document.createElement('p');
+        why.className = 'muted';
+        why.textContent = `🎙 Судья: ${event.ai_explanation}`;
+        $('#event-card').appendChild(why);
+      }
+      const info = [];
+      if (event.spy) info.push(`Шпион открыл карту ${nameOf(event.spy.player_id)}: ${event.spy.card.replace('T', '10')}`);
+      if (event.wealth_tax?.amount) info.push(`Налог: ${nameOf(event.wealth_tax.from_id)} → ${nameOf(event.wealth_tax.to_id)}: ${event.wealth_tax.amount}`);
+      if (event.joker) info.push(`Джокер: ${event.joker.card.replace('T', '10')}`);
+      if (event.carousel_waiting?.length) info.push(`Ждём выбор: ${event.carousel_waiting.map(nameOf).join(', ')}`);
+      $('#event-info').textContent = info.join(' · ');
+
+      $('#veto-box').hidden = state.phase !== 'event_reveal';
+      $('#veto-btn').hidden = !state.you?.abilities.includes('veto');
+      const carousel = state.phase === 'carousel' && state.you && state.you.carousel_pick === null
+        && state.you.hole_cards.length > 0;
+      $('#carousel-box').hidden = !carousel;
+      if (carousel) {
+        $('#carousel-cards').innerHTML = '';
+        state.you.hole_cards.forEach((card, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'secondary';
+          button.appendChild(renderCard(card, cardOptions()));
+          button.addEventListener('click', () => channel?.send('carousel_pick', { card_index: index }));
+          $('#carousel-cards').appendChild(button);
+        });
+      }
+      document.querySelectorAll('[data-role="phase-left"]').forEach(element => {
+        window.Chaos.setCountdown(element, state.phase_seconds_left);
+      });
+    }
+
+    function renderLastHand() {
+      const hand = state.last_hand;
+      const box = $('#last-hand');
+      const show = hand && ['between_hands', 'game_over'].includes(state.phase);
+      box.hidden = !show;
+      if (!show) return;
+      const winners = Object.entries(hand.winnings).map(([id, amount]) => `${esc(nameOf(id))} +${amount}`).join(', ');
+      box.innerHTML = `<h3>Раздача №${hand.hand_number}: ${winners}</h3>`;
+      const joker = hand.joker_card;
+      const board = document.createElement('div');
+      board.textContent = 'Стол: ';
+      board.appendChild(renderCardList(hand.board, cardOptions(),
+        hand.board.map(card => card === null ? 'blind' : card === joker ? 'joker' : null), winningCards(hand)));
+      box.appendChild(board);
+      Object.entries(hand.revealed).forEach(([id, cards]) => {
+        const row = document.createElement('div');
+        row.textContent = `${nameOf(id)}: `;
+        row.appendChild(renderCardList(cards, cardOptions(), [], winningCards(hand)));
+        box.appendChild(row);
+      });
+      if (hand.hand_number !== lastCelebrated && hand.winnings[state.you?.id]) {
+        lastCelebrated = hand.hand_number;
+        window.Chaos.sound('win');
+        navigator.vibrate?.([80, 60, 80, 60, 160]);
+      }
+      const side = hand.side_bets;
+      if (side) {
+        const line = document.createElement('p');
+        line.className = 'muted';
+        line.textContent = side.winner_ids.length
+          ? `Побочные ставки: ${Object.entries(side.payouts).map(([id, amount]) => `${nameOf(id)} +${amount}`).join(', ')}`
+          : `Побочные ставки: никто не угадал, ${side.pool} ушло в банк`;
+        box.appendChild(line);
+      }
+    }
+
+    function renderResults() {
+      const box = $('#results');
+      box.hidden = !state.game_over || !state.results;
+      if (box.hidden) return;
+      box.innerHTML = window.Chaos.resultsHtml(state.results);
+    }
+
+    const TASK_STATUSES = {
+      pending: 'выполняется', pending_review: 'ждёт решения диллера', voting: 'идёт голосование',
+    };
+
+    function renderTask() {
+      const me = state.you?.id;
+      const open = task => ['pending', 'pending_review', 'voting'].includes(task.status);
+      const mine = state.tasks.filter(task => open(task) && (task.player_id === me || task.player_id === 'all'));
+      const toVote = state.tasks.filter(task => task.status === 'voting' && task.vote?.can_vote);
+      $('#task-panel').hidden = !mine.length && !toVote.length;
+      const cards = mine.map(task => {
+        const kind = task.kind === 'bonus' ? `🎁 Бонус +${task.reward}` : '⚠️ Штраф';
+        const retry = task.attempts > 0 ? ' · повторная попытка' : '';
+        const vote = task.vote ? ` · за: ${task.vote.yes}/${task.vote.needed}` : '';
+        const buttons = task.status !== 'pending' ? '' : `
+          ${task.task_type === 'photo' ? '' : `<button type="button" data-done="${esc(task.id)}">✅ Выполнил</button>`}
+          <button type="button" class="secondary" data-refuse="${esc(task.id)}">${task.kind === 'penalty' ? `Отказаться (−${task.refuse_cost})` : 'Отказаться'}</button>`;
+        return `<div class="panel"><strong>${kind}: ${esc(task.title)}</strong>${task.description !== task.title ? `<br>${esc(task.description)}` : ''}
+          <br><span class="muted">${esc(TASK_STATUSES[task.status] || task.status)}${retry}${vote}</span>
+          <div class="row" style="margin-top:8px">${buttons}</div></div>`;
+      });
+      const votes = toVote.map(task => `<div class="panel">🗳 ${esc(nameOf(task.player_id))}: задание «${esc(task.title)}» выполнено?
+        <span class="muted">(${task.vote.yes} за, нужно ${task.vote.needed})</span>
+        <div class="row" style="margin-top:8px">
+          <button type="button" data-vote="${esc(task.id)}" data-value="1">Да</button>
+          <button type="button" class="secondary" data-vote="${esc(task.id)}" data-value="0">Нет</button>
+        </div></div>`);
+      $('#task-info').innerHTML = cards.join('') + votes.join('');
+      const photoTask = mine.find(task => task.task_type === 'photo' && task.status === 'pending');
+      photoTaskId = photoTask?.id || null;
+      $('#photo-controls').hidden = !photoTask;
+      if (photoTask) $('#photo-input').setAttribute('capture', photoTask.camera === 'front' ? 'user' : 'environment');
+    }
+
+    function renderDecree() {
+      const decree = state.decree;
+      $('#decree-box').hidden = !decree;
+      if (decree) $('#decree-box').textContent = `${decree.icon} Указ: ${decree.title} — ${decree.description}`;
+    }
+
+    function render(next) {
+      state = next;
+      status.textContent = state.you ? `Вы: ${state.you.name}` : 'Подключено';
+      renderPlayers();
+      renderGame();
+      renderEvent();
+      renderLastHand();
+      renderResults();
+      renderTask();
+      renderDecree();
+      renderPhotos();
+      renderAiJudge();
+      renderActivity();
+    }
+
+    const DUEL = { rock: '✊ Камень', paper: '✋ Бумага', scissors: '✌️ Ножницы' };
+
+    function renderActivity() {
+      const activity = state.activity;
+      const panel = $('#activity-panel');
+      const active = activity?.id && activity.status === 'active';
+      panel.hidden = !active;
+      if (!active) return;
+      const me = state.you?.id;
+      const mine = activity.players.includes(me);
+      $('#activity-title').textContent = `${activity.icon} ${activity.title}`;
+      $('#activity-desc').textContent = activity.description;
+      const left = activity.seconds_left ? ` · ${activity.seconds_left} с` : '';
+      $('#activity-meta').textContent = `Участники: ${activity.players.map(nameOf).join(', ')}${left}`
+        + (activity.judge === 'dealer' && activity.type !== 'duel' ? ' · решает диллер' : '');
+      let controls = '';
+      if (mine && activity.type === 'duel') {
+        controls = activity.your_pick
+          ? `<span>Ваш жест: ${DUEL[activity.your_pick]} — ждём соперника (раунд ${activity.round})</span>`
+          : Object.entries(DUEL).map(([id, label]) => `<button type="button" data-duel="${id}">${label}</button>`).join('');
+      } else if (mine && activity.judge === 'players' && activity.your_report == null) {
+        if (activity.type === 'shake_battle') {
+          controls = '<span>Кто победил?</span>' + activity.players
+            .map(id => `<button type="button" data-shake="${esc(id)}">${esc(id === me ? 'Я' : nameOf(id))}</button>`).join('');
+        } else if (activity.type === 'freeze') {
+          controls = '<button type="button" data-moved="0">😐 Я выдержал</button><button type="button" class="secondary" data-moved="1">😅 Я дёрнулся</button>';
+        }
+      } else if (mine && activity.judge === 'players') {
+        controls = '<span class="muted">Ответ отправлен, ждём остальных</span>';
+      }
+      if (mine) controls += `<button type="button" class="secondary" data-skip="1">Пропустить (−${activity.skip_fee})</button>`;
+      $('#activity-controls').innerHTML = controls;
+    }
+
+    function renderAiJudge() {
+      const ai = state.settings.dealer_mode === 'ai';
+      const me = state.players.find(player => player.id === state.you?.id);
+      $('#bribe-panel').hidden = !ai || !state.game_started || state.game_over || !me || me.stack <= 0;
+      const amount = $('#bribe-amount');
+      const bigBlind = state.game?.big_blind || 20;
+      amount.min = bigBlind;
+      if (!amount.value) amount.value = 3 * bigBlind;
+      const comment = state.dealer_comment;
+      $('#comment-box').hidden = !comment || state.game_over;
+      if (comment) $('#comment-box').textContent = `🎙 ${comment.text}`;
+    }
+
+    const mediaUrl = url => `${url}?token=${encodeURIComponent(localStorage.getItem(TOKEN_KEY) || '')}`;
+
+    function reactionButtons(item) {
+      return state.reactions.map(emoji => {
+        const count = item.reactions[emoji] || 0;
+        const mine = item.your_reaction === emoji ? ' mine' : '';
+        return `<button type="button" class="reaction${mine}" data-react="${esc(item.task_id)}" data-emoji="${emoji}">${emoji}${count ? ` ${count}` : ''}</button>`;
+      }).join('');
+    }
+
+    function renderPhotos() {
+      const gallery = state.gallery || [];
+      const show = state.showcase;
+      $('#showcase').hidden = !show;
+      if (show) {
+        const item = gallery.find(entry => entry.photo_id === show.photo_id);
+        $('#showcase-title').textContent = `📸 ${nameOf(show.player_id)}: ${show.title}`;
+        const src = mediaUrl(show.url);
+        if ($('#showcase-img').dataset.src !== src) {
+          $('#showcase-img').src = src;
+          $('#showcase-img').dataset.src = src;
+        }
+        $('#showcase-reactions').innerHTML = item ? reactionButtons(item) : '';
+      }
+      $('#gallery-panel').hidden = !gallery.length;
+      $('#gallery').innerHTML = gallery.slice().reverse().map(item => `
+        <div class="gallery-item">
+          <strong>${esc(nameOf(item.player_id))}: ${esc(item.title)}</strong>
+          ${item.comment ? `<br><span class="muted">Судья: ${esc(item.comment)}</span>` : ''}
+          <img class="preview" loading="lazy" src="${esc(mediaUrl(item.url))}" alt="${esc(item.title)}">
+          <div class="row">${reactionButtons(item)}
+            <button type="button" class="secondary" data-album="${esc(item.photo_id)}" ${item.album ? 'disabled' : ''}>${item.album ? '📒 В альбоме' : '📒 В альбом'}</button>
+          </div>
+        </div>`).join('');
+    }
+
+    function onMessage(message) {
+      const payload = message.payload || {};
+      if (message.type === 'state') render(payload);
+      else if (message.type === 'private_notice') {
+        if (payload.revealed_card) toast(`Подглядели: у ${nameOf(payload.target_id)} есть ${payload.revealed_card.replace('T', '10')}`, 'private');
+        else if (payload.new_card) {
+          toast(`Новая карта: ${payload.new_card.replace('T', '10')}`, 'private');
+          freshCard = payload.new_card;
+          setTimeout(() => { freshCard = null; if (state) renderGame(); }, 2000);
+        }
+        else if (payload.stolen_amount) toast(`Украдено ${payload.stolen_amount} фишек`, 'private');
+        else if (payload.bribe) {
+          const bribe = payload.bribe;
+          const extra = bribe.hint ? ` Подсказка: ${bribe.hint}` : bribe.event ? ' Следующая раздача будет с сюрпризом!' : '';
+          toast(`${bribe.accepted ? '🤝 Взятка принята.' : '🙅 Взятка отклонена.'} ${bribe.comment || ''}${extra}`, 'private');
+        }
+      } else if (message.type === 'event_revealed') {
+        shakeScreen();
+        window.Chaos.sound('event');
+        toast(`${payload.icon || '⚡'} Событие: ${payload.title}`);
+      } else if (message.type === 'event_vetoed') toast(`🚫 Вето от ${nameOf(payload.player_id)}: событие отменено`);
+      else if (message.type === 'ability_granted' && payload.player_id === state?.you?.id) toast('✨ Вы получили новую способность!');
+      else if (message.type === 'activity_started' && payload.players.includes(state?.you?.id)) {
+        navigator.vibrate?.([200, 100, 200]);
+        toast(`💪 ${payload.title}: ваш выход!`);
+      }
+      else if (message.type === 'activity_result') toast(payload.text);
+      else if (message.type === 'duel_round') toast('Ничья! Выбирайте снова');
+      else if (message.type === 'photo_show') { navigator.vibrate?.(80); toast(`📸 ${nameOf(payload.player_id)}: ${payload.title} — ставьте реакции!`); }
+      else if (message.type === 'task_result' && payload.status === 'pending') toast('Задание не засчитано — есть ещё одна попытка', 'error');
+      else if (message.type === 'carousel_done') toast('🎠 Карусель: вы получили карту от соседа справа');
+      else if (message.type === 'task_assigned' && payload.target_id === state?.you?.id) {
+        navigator.vibrate?.([100, 50, 100]);
+        window.Chaos.sound('task');
+        toast(`Вам задание: ${payload.title}`);
+      }
+      else if (message.type === 'fine' && payload.player_id === state?.you?.id) toast(`Штраф: −${payload.amount}`, 'error');
+      else if (message.type === 'decree') { shakeScreen(); toast(`📜 Указ: ${payload.title}`); }
+    }
+
+    function start(sessionToken) {
+      $('#join-form').hidden = true;
+      channel = window.Chaos.connect(sessionToken, onMessage, {
+        onUnauthorized() {
+          localStorage.removeItem(TOKEN_KEY);
+          status.textContent = 'Сессия устарела. Отсканируйте QR-код ещё раз.';
+          if (joinToken) $('#join-form').hidden = false;
+        },
+      });
+    }
+
+    $('#join-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const response = await fetch('/api/join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: joinToken, name: $('#name').value, avatar, agreed_to_terms: $('#consent').checked }),
+      });
+      if (!response.ok) {
+        status.textContent = 'Ссылка недействительна или игра уже началась';
+        return;
+      }
+      const data = await response.json();
+      localStorage.setItem(TOKEN_KEY, data.session_token);
+      render(data.state);
+      start(data.session_token);
+    });
+
+    document.querySelectorAll('#player-actions button').forEach(button => {
+      button.addEventListener('click', () => channel?.send('action', { kind: button.dataset.kind }));
+    });
+    $('#raise-range').addEventListener('input', () => { $('#raise-value').textContent = $('#raise-range').value; });
+    $('#raise-btn').addEventListener('click', () => channel?.send('action', { kind: 'raise', amount: Number($('#raise-range').value) }));
+
+    $('#abilities').addEventListener('click', event => {
+      const id = event.target.closest('[data-ability]')?.dataset.ability;
+      if (!id) return;
+      const ability = ABILITIES[id] || {};
+      if (!ability.target && !ability.card) {
+        channel?.send('use_ability', { ability_id: id });
+        return;
+      }
+      pendingAbility = id;
+      const options = ability.card
+        ? state.you.hole_cards.map((card, index) => `<option value="${index}">Карта ${index + 1}: ${esc(card.replace('T', '10'))}</option>`)
+        : state.players.filter(player => player.id !== state.you.id && !['folded', 'out'].includes(player.status))
+          .map(player => `<option value="${esc(player.id)}">${esc(player.avatar)} ${esc(player.name)}</option>`);
+      $('#target-select').innerHTML = options.join('');
+      $('#ability-target').hidden = false;
+    });
+    $('#ability-confirm').addEventListener('click', () => {
+      const value = $('#target-select').value;
+      const payload = ABILITIES[pendingAbility]?.card
+        ? { ability_id: pendingAbility, card_index: Number(value) }
+        : { ability_id: pendingAbility, target_id: value };
+      channel?.send('use_ability', payload);
+      $('#ability-target').hidden = true;
+    });
+    $('#ability-cancel').addEventListener('click', () => { $('#ability-target').hidden = true; });
+    $('#task-info').addEventListener('click', event => {
+      const done = event.target.closest('[data-done]')?.dataset.done;
+      const refuse = event.target.closest('[data-refuse]')?.dataset.refuse;
+      const vote = event.target.closest('[data-vote]');
+      if (done) channel?.send('task_done', { task_id: done });
+      if (refuse && confirm('Отказаться от задания?')) channel?.send('task_refuse', { task_id: refuse });
+      if (vote) channel?.send('vote', { subject_id: vote.dataset.vote, value: vote.dataset.value === '1' });
+    });
+    $('#side-bets').addEventListener('click', event => {
+      const bet = event.target.closest('[data-bet]')?.dataset.bet;
+      if (bet) channel?.send('side_bet', { bet_id: bet });
+    });
+    $('#bribe-btn').addEventListener('click', () => {
+      const amount = Number($('#bribe-amount').value);
+      if (!confirm(`Предложить судье ${amount} фишек? Они уйдут в банк, даже если судья откажет.`)) return;
+      channel?.send('bribe', { amount, wish: $('#bribe-wish').value });
+    });
+    window.Chaos.bindSoundToggle($('#sound-toggle'));
+    $('#veto-btn').addEventListener('click', () => channel?.send('use_ability', { ability_id: 'veto' }));
+
+    // The photo goes straight to POST /api/photos; the server re-encodes it and strips EXIF.
+    $('#photo-input').addEventListener('change', async event => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file || !photoTaskId || uploading) return;
+      if (file.size > 8 * 1024 * 1024) {
+        toast('Фото больше 8 МБ', 'error');
+        return;
+      }
+      $('#photo-preview').src = URL.createObjectURL(file);
+      $('#photo-preview').hidden = false;
+      $('#photo-status').textContent = 'Отправляем…';
+      uploading = true;
+      const form = new FormData();
+      form.append('token', localStorage.getItem(TOKEN_KEY) || '');
+      form.append('task_id', photoTaskId);
+      form.append('file', file);
+      try {
+        const response = await fetch('/api/photos', { method: 'POST', body: form });
+        const data = await response.json().catch(() => ({}));
+        $('#photo-status').textContent = response.ok ? 'Фото у диллера на проверке' : '';
+        toast(response.ok ? 'Фото отправлено на проверку' : `Не удалось отправить фото: ${data.detail || response.status}`,
+          response.ok ? 'info' : 'error');
+      } catch {
+        $('#photo-status').textContent = '';
+        toast('Нет связи с сервером', 'error');
+      } finally {
+        uploading = false;
+      }
+    });
+    $('#activity-controls').addEventListener('click', event => {
+      const target = event.target.closest('button');
+      if (!target) return;
+      if (target.dataset.duel) channel?.send('duel_pick', { choice: target.dataset.duel });
+      if (target.dataset.shake) channel?.send('activity_report', { winner_id: target.dataset.shake });
+      if (target.dataset.moved) channel?.send('activity_report', { moved: target.dataset.moved === '1' });
+      if (target.dataset.skip && confirm('Пропустить активность за небольшой штраф?')) channel?.send('activity_skip');
+    });
+    document.addEventListener('click', event => {
+      const react = event.target.closest('[data-react]');
+      if (react) channel?.send('react', { task_id: react.dataset.react, emoji: react.dataset.emoji });
+      const album = event.target.closest('[data-album]');
+      if (album) channel?.send('album_save', { photo_id: album.dataset.album });
+    });
+
+    (async () => {
+      const saved = localStorage.getItem(TOKEN_KEY);
+      if (saved) {
+        const response = await fetch(`/api/session?token=${encodeURIComponent(saved)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.role === 'player') {
+            render(data.state);
+            start(saved);
+            return;
+          }
+        }
+        localStorage.removeItem(TOKEN_KEY);
+      }
+      if (joinToken) {
+        status.textContent = 'Введите имя и выберите аватар';
+        $('#join-form').hidden = false;
+      } else {
+        status.textContent = 'Отсканируйте QR-код игроков на экране ведущего';
+      }
+    })();
+  </script>
+</body>
+</html>

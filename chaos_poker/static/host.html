@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chaos Poker — Host</title>
+  <link rel="stylesheet" href="/static/css/cards.css">
+  <style>
+    [hidden] { display: none !important; }
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #14120f; color: #f8f1df; }
+    body { max-width: 900px; margin: 0 auto; padding: 16px; }
+    h1 { color: #f4c95d; } .panel { border: 1px solid #4d4435; padding: 16px; margin: 14px 0; border-radius: 10px; }
+    input, button, select { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid #75664e; }
+    input, select { background: #211d17; color: inherit; } button { background: #f4c95d; color: #241e14; cursor: pointer; }
+    button.secondary { background: #3a3326; color: #f8f1df; }
+    button:disabled { opacity: .4; cursor: default; }
+    li { margin: 6px 0; } .muted { color: #b6aa94; } .error { color: #ff8e8e; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .qr img { width: 220px; height: 220px; background: #fff; border-radius: 8px; }
+    .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+    .settings label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+    .settings label.check { flex-direction: row; align-items: center; }
+    .seat-dealer { position: absolute; top: -10px; right: -10px; background: #fff; color: #000; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+    .seat-bet { font-size: .75rem; color: #fde68a; }
+    .seat-status { font-size: .7rem; color: #fca5a5; text-transform: uppercase; }
+    #feed { max-height: 220px; overflow: auto; font-size: .9rem; }
+    #event { margin: 12px 0; }
+    #showcase { position: fixed; inset: 0; background: rgb(0 0 0 / 85%); display: grid; place-items: center; z-index: 40; }
+    #showcase figure { margin: 0; text-align: center; }
+    #showcase img { max-width: 92vw; max-height: 72vh; border-radius: 14px; box-shadow: 0 10px 40px rgb(0 0 0 / 60%); }
+    #showcase figcaption { margin-top: 12px; font-size: 1.3rem; }
+    #showcase-reactions { font-size: 2rem; margin-top: 8px; min-height: 2.4rem; }
+    #event-phase { margin: 6px 0 0; color: #fdba74; }
+  </style>
+</head>
+<body>
+  <div class="row"><h1 style="flex:1">Chaos Poker</h1><button type="button" class="secondary" id="sound-toggle"></button></div>
+  <section class="panel" id="setup">
+    <h2>Создать игру</h2>
+    <form id="create-form" class="row"><input id="host-name" required maxlength="40" placeholder="Имя ведущего"><button>Создать игру</button></form>
+  </section>
+
+  <section class="panel" id="lobby" hidden>
+    <h2>Лобби · <span class="muted" id="room-id"></span></h2>
+    <div class="row qr">
+      <div id="dealer-qr-box"><p>1. Диллер сканирует:</p><img id="dealer-qr" alt="QR-код диллера"></div>
+      <div id="players-qr-box"><p>2. Игроки сканируют:</p><img id="players-qr" alt="QR-код игроков"></div>
+    </div>
+    <p>Диллер: <strong id="dealer-status">не подключён</strong></p>
+    <div class="panel">
+      <h3>Настройки</h3>
+      <form class="settings" id="settings-form">
+        <label>Стартовый стек<input type="number" name="starting_stack" min="1"></label>
+        <label>Повышение блайндов, раздач<input type="number" name="blind_interval_hands" min="1"></label>
+        <label>Таймер хода, сек<input type="number" name="turn_timer_sec" min="5"></label>
+        <label>Лимит раздач (пусто — без лимита)<input type="number" name="hand_limit" min="1"></label>
+        <label>Уровень хаоса<select name="chaos_level">
+          <option value="light">light — событие каждую 3-ю раздачу</option>
+          <option value="medium">medium — каждую 2-ю, способности</option>
+          <option value="full">full — всё включено</option></select></label>
+        <label>Режим диллера<select name="dealer_mode">
+          <option value="human">Человек</option><option value="ai">ИИ</option><option value="none">Без диллера</option></select></label>
+        <label>Острота заданий<select name="task_spiciness">
+          <option value="mild">мягкий</option><option value="medium">средний</option><option value="spicy">острый</option></select></label>
+        <label>Физическая активность<select name="physical_activity">
+          <option value="off">выкл</option><option value="light">light</option><option value="medium">medium</option><option value="hard">hard</option></select></label>
+        <label class="check"><input type="checkbox" name="four_color_deck"> Четырёхцветная колода</label>
+        <label class="check"><input type="checkbox" name="allow_join_during_game"> Подключение в ходе игры</label>
+      </form>
+      <button id="apply-settings" type="button" style="margin-top:12px;">Применить настройки</button>
+      <div class="row" style="margin-top:12px;">
+        <span>ИИ-судья: <strong id="ai-status">…</strong></span>
+        <span class="muted" id="ai-usage"></span>
+        <button id="ai-check" type="button" class="secondary">Проверить ИИ</button>
+      </div>
+      <p class="muted" id="ai-hint" hidden></p>
+    </div>
+    <h3>Игроки</h3><ul id="players"></ul>
+    <button id="start-game" type="button">Начать игру</button>
+  </section>
+
+  <section class="panel" id="game" hidden>
+    <div class="row">
+      <strong id="hand-info"></strong>
+      <span class="muted" id="blinds"></span>
+      <span style="flex:1"></span>
+      <button id="pause-btn" class="secondary" type="button">Пауза</button>
+      <button id="end-btn" class="secondary" type="button">Завершить игру</button>
+    </div>
+    <div id="comment-box" class="panel" style="border-color:#7c3aed" hidden>
+      <div class="row"><span id="comment-text" style="flex:1"></span>
+        <label class="muted"><input type="checkbox" id="speak"> озвучивать</label></div>
+    </div>
+    <div id="event" hidden>
+      <div id="event-card"></div>
+      <p id="event-phase"></p>
+    </div>
+    <div class="poker-table" id="host-poker-table">
+      <div class="pot-container"><span class="chip-icon"></span><span id="host-total-pot">0</span><span id="side-pool" class="muted"></span></div>
+      <div class="board-cards" id="host-board-cards"></div>
+      <p id="turn" style="z-index:2"></p>
+    </div>
+    <div id="activity-box" class="panel" style="border-color:#0e7490;background:#083344" hidden></div>
+    <div class="panel row" id="host-activity" hidden>
+      <span>Активность:</span>
+      <select id="host-activity-type">
+            <option value="shake_battle">📳 Шейк-баттл (двое)</option>
+            <option value="freeze">🧊 Замри (все)</option>
+            <option value="duel">✊ Дуэль (двое)</option>
+            <option value="squats">🏋️ Приседания (штраф)</option>
+            <option value="standing_table">🧍 Стоячий стол</option>
+      </select>
+      <button type="button" id="host-activity-btn">Запустить</button>
+    </div>
+    <div id="decree-box" class="panel" style="border-color:#a16207;background:#422006" hidden></div>
+    <div id="tasks-box" class="panel" hidden><h3>Задания</h3><div id="tasks"></div></div>
+    <div id="last-hand" class="panel" hidden></div>
+    <div class="panel"><h3>Лента</h3><ul id="feed"></ul></div>
+  </section>
+
+  <section class="panel" id="results" hidden></section>
+  <div id="showcase" hidden>
+    <figure>
+      <img id="showcase-img" alt="Принятое фото-задание">
+      <figcaption id="showcase-title"></figcaption>
+      <div id="showcase-reactions"></div>
+    </figure>
+  </div>
+  <p id="error" class="error"></p>
+
+  <script src="/static/js/cards.js"></script>
+  <script src="/static/js/client.js"></script>
+  <script>
+    const { esc, toast, STREETS, STATUSES } = window.Chaos;
+    const TOKEN_KEY = 'chaos_host_token';
+    const $ = selector => document.querySelector(selector);
+    const error = $('#error');
+    let room = null;   // { room_id, host_token }
+    let state = null;
+    let channel = null;
+    let lastCelebrated = null;
+
+    const nameOf = id => state?.players.find(player => player.id === id)?.name || id;
+    const cardOptions = () => ({ fourColor: Boolean(state?.settings?.four_color_deck) });
+
+    // Seats evenly spaced on an ellipse around the table, first seat at the bottom.
+    function seatPosition(index, count) {
+      const angle = Math.PI / 2 + (2 * Math.PI * index) / count;
+      return { left: `${50 + 42 * Math.cos(angle)}%`, top: `${50 + 40 * Math.sin(angle)}%` };
+    }
+
+    function fillSettings(settings) {
+      const form = $('#settings-form');
+      for (const [key, value] of Object.entries(settings)) {
+        const field = form.elements[key];
+        if (!field) continue;
+        if (field.type === 'checkbox') field.checked = Boolean(value);
+        else field.value = value ?? '';
+      }
+    }
+
+    function readSettings() {
+      const form = $('#settings-form');
+      const number = name => Number(form.elements[name].value);
+      return {
+        starting_stack: number('starting_stack'),
+        blind_interval_hands: number('blind_interval_hands'),
+        turn_timer_sec: number('turn_timer_sec'),
+        hand_limit: form.elements.hand_limit.value ? number('hand_limit') : null,
+        chaos_level: form.elements.chaos_level.value,
+        dealer_mode: form.elements.dealer_mode.value,
+        task_spiciness: form.elements.task_spiciness.value,
+        physical_activity: form.elements.physical_activity.value,
+        four_color_deck: form.elements.four_color_deck.checked,
+        allow_join_during_game: form.elements.allow_join_during_game.checked,
+      };
+    }
+
+    function renderAi() {
+      const status = state.ai || {};
+      const usage = status.usage;
+      $('#ai-status').textContent = !status.enabled ? 'выключен (нет ключа)' : status.ready ? 'готов' : `недоступен`;
+      $('#ai-usage').textContent = usage && status.enabled
+        ? `токены за партию: ${usage.used}${usage.limit ? ` / ${usage.limit}` : ''}` : '';
+      const hint = $('#ai-hint');
+      hint.hidden = !status.message || status.ready;
+      hint.textContent = status.message || '';
+      if (state.settings.dealer_mode === 'ai' && !status.ready) {
+        hint.hidden = false;
+        hint.textContent = (status.message || 'ИИ недоступен') + '. Судья-ИИ будет говорить заготовленными фразами.';
+      }
+      const comment = state.dealer_comment;
+      $('#comment-box').hidden = !comment || !state.game_started;
+      if (comment) $('#comment-text').textContent = `🎙 ${comment.text}`;
+    }
+
+    function renderLobby() {
+      $('#lobby').hidden = state.game_started;
+      $('#dealer-status').textContent = state.dealer_connected ? 'подключён' : 'не подключён';
+      $('#dealer-qr-box').hidden = state.dealer_connected;
+      $('#start-game').disabled = state.game_started || state.players.length < 2;
+      $('#players').innerHTML = state.players
+        .map(player => `<li>${esc(player.avatar)} ${esc(player.name)}${player.connected ? '' : ' <span class="muted">(офлайн)</span>'}</li>`)
+        .join('') || '<li class="muted">Ожидание игроков</li>';
+    }
+
+    function renderGame() {
+      const game = state.game;
+      $('#game').hidden = !game || state.game_over;
+      if (!game) return;
+      $('#hand-info').textContent = `Раздача №${game.hand_number} · ${STREETS[game.street] || game.street}`;
+      $('#blinds').textContent = `Блайнды ${game.small_blind}/${game.big_blind}`;
+      $('#host-total-pot').textContent = game.pot_total;
+      const side = game.side_bets;
+      $('#side-pool').textContent = side?.pool ? ` · побочный пул ${side.pool}` : '';
+      $('#pause-btn').textContent = state.paused ? 'Продолжить' : 'Пауза';
+      $('#turn').textContent = state.paused ? '⏸ Пауза'
+        : game.current_player_id ? `Ходит ${nameOf(game.current_player_id)} · ${game.turn_seconds_left ?? ''} с` : '';
+      renderCardsInto($('#host-board-cards'), game.board, cardOptions(), boardMarks(game.board, state.event), { flip: true });
+      renderEvent();
+
+      const table = $('#host-poker-table');
+      table.querySelectorAll('.player-seat').forEach(seat => seat.remove());
+      state.players.forEach((player, index) => {
+        const seat = document.createElement('div');
+        seat.className = 'player-seat';
+        seat.classList.toggle('active-turn', player.id === game.current_player_id);
+        seat.classList.toggle('folded', ['folded', 'out'].includes(player.status));
+        const pos = seatPosition(index, state.players.length);
+        Object.assign(seat.style, pos, { transform: 'translate(-50%, -50%)' });
+        seat.innerHTML = `
+          ${game.dealer_player_id === player.id ? '<span class="seat-dealer">D</span>' : ''}
+          <div class="player-avatar">${esc(player.avatar)}</div>
+          <div class="player-name">${esc(player.name)}</div>
+          <div class="player-stack">${player.stack} 🪙</div>
+          ${player.street_commitment ? `<div class="seat-bet">ставка ${player.street_commitment}</div>` : ''}
+          <div class="seat-status">${esc(STATUSES[player.status] || '')}${player.connected ? '' : ' офлайн'}</div>`;
+        table.appendChild(seat);
+      });
+
+      $('#feed').innerHTML = state.feed.slice().reverse().map(line => `<li>${esc(line)}</li>`).join('');
+      renderDecreeAndTasks();
+      renderActivity();
+
+      const hand = state.last_hand;
+      const showHand = hand && ['between_hands', 'game_over'].includes(state.phase);
+      const box = $('#last-hand');
+      box.hidden = !showHand;
+      if (showHand) {
+        const winners = Object.entries(hand.winnings).map(([id, amount]) => `${esc(nameOf(id))} +${amount}`).join(', ');
+        box.innerHTML = `<h3>${hand.showdown ? 'Шоудаун' : 'Без вскрытия'}: ${winners}</h3>`;
+        const board = document.createElement('div');
+        board.textContent = 'Стол: ';
+        board.appendChild(renderCardList(hand.board, cardOptions(),
+          hand.board.map(card => card === null ? 'blind' : card === hand.joker_card ? 'joker' : null), winningCards(hand)));
+        box.appendChild(board);
+        Object.entries(hand.revealed).forEach(([id, cards]) => {
+          const row = document.createElement('div');
+          row.textContent = `${nameOf(id)}: `;
+          row.appendChild(renderCardList(cards, cardOptions(), [], winningCards(hand)));
+          box.appendChild(row);
+        });
+        if (hand.showdown && hand.hand_number !== lastCelebrated) {
+          lastCelebrated = hand.hand_number;
+          window.Chaos.sound('win');
+        }
+        if (hand.side_bets) {
+          const line = document.createElement('p');
+          line.className = 'muted';
+          line.textContent = hand.side_bets.winner_ids.length
+            ? `Побочные ставки: ${Object.entries(hand.side_bets.payouts).map(([id, amount]) => `${nameOf(id)} +${amount}`).join(', ')}`
+            : `Побочные ставки: никто не угадал, ${hand.side_bets.pool} ушло в банк`;
+          box.appendChild(line);
+        }
+      }
+    }
+
+    function renderEvent() {
+      const event = state.event;
+      const box = $('#event');
+      box.hidden = event.id === 'none';
+      if (box.hidden) return;
+      $('#event-card').replaceChildren(renderEventCard(event));
+      if (event.ai_explanation) {
+        const why = document.createElement('p');
+        why.className = 'muted';
+        why.textContent = `🎙 Судья: ${event.ai_explanation}`;
+        $('#event-card').appendChild(why);
+      }
+      const lines = [];
+      if (state.phase === 'event_reveal') lines.push(`Окно вето: <strong data-role="phase-left"></strong> с`);
+      if (state.phase === 'carousel') {
+        lines.push(`🎠 Выбор карт: <strong data-role="phase-left"></strong> с · ждём: ${esc((event.carousel_waiting || []).map(nameOf).join(', '))}`);
+      }
+      if (event.spy) lines.push(`🕵️ У ${esc(nameOf(event.spy.player_id))} есть ${esc(event.spy.card.replace('T', '10'))}`);
+      if (event.wealth_tax?.amount) {
+        lines.push(`🏦 ${esc(nameOf(event.wealth_tax.from_id))} отдаёт ${event.wealth_tax.amount} игроку ${esc(nameOf(event.wealth_tax.to_id))}`);
+      }
+      if (event.joker) lines.push(`★ Джокер — ${esc(event.joker.card.replace('T', '10'))}`);
+      $('#event-phase').innerHTML = lines.join('<br>');
+      document.querySelectorAll('[data-role="phase-left"]').forEach(element => {
+        window.Chaos.setCountdown(element, state.phase_seconds_left);
+      });
+    }
+
+    function renderActivity() {
+      // Without a human dealer the host starts the activities.
+      $('#host-activity').hidden = state.settings.physical_activity === 'off' || (state.settings.dealer_mode === 'human' && state.dealer_connected);
+      const activity = state.activity;
+      const box = $('#activity-box');
+      box.hidden = !(activity?.id && activity.status === 'active');
+      if (box.hidden) return;
+      const left = activity.seconds_left ? ` · ⏱ ${activity.seconds_left} с` : '';
+      const progress = activity.type === 'duel'
+        ? ` · жест выбрали: ${activity.picked.length}/2`
+        : activity.judge === 'players' ? ` · ответили: ${activity.reported.length}/${activity.players.length}` : ' · решает диллер';
+      box.innerHTML = `<h3>${esc(activity.icon)} ${esc(activity.title)}${left}</h3><p>${esc(activity.description)}</p>
+        <p>Участники: <strong>${esc(activity.players.map(nameOf).join(', '))}</strong><span class="muted">${esc(progress)}</span></p>`;
+    }
+
+    function renderDecreeAndTasks() {
+      const decree = state.decree;
+      $('#decree-box').hidden = !decree;
+      if (decree) $('#decree-box').textContent = `${decree.icon} Указ судьи: ${decree.title} — ${decree.description}`;
+      const labels = { pending: 'выполняется', pending_review: 'на проверке у диллера', voting: 'голосование' };
+      const open = state.tasks.filter(task => labels[task.status]);
+      $('#tasks-box').hidden = !open.length;
+      $('#tasks').innerHTML = open.map(task => {
+        const kind = task.kind === 'bonus' ? `🎁 +${task.reward}` : '⚠️';
+        const vote = task.vote ? ` (${task.vote.yes} за, ${task.vote.no} против, нужно ${task.vote.needed})` : '';
+        return `<p>${kind} <strong>${esc(nameOf(task.player_id))}</strong>: ${esc(task.title)}
+          <span class="muted">— ${labels[task.status]}${vote}</span></p>`;
+      }).join('');
+    }
+
+    function renderResults() {
+      const box = $('#results');
+      box.hidden = !state.game_over || !state.results;
+      if (box.hidden) return;
+      const album = state.album || [];
+      const albumUrl = `/api/album.zip?host_token=${encodeURIComponent(room.host_token)}`;
+      box.innerHTML = window.Chaos.resultsHtml(state.results)
+        + (state.settings.dealer_mode === 'ai' && !state.results.protocol ? '<p class="muted">Судья пишет протокол…</p>' : '')
+        + `<h3>Альбом вечера: ${album.length} фото</h3>`
+        + (album.length ? `<p><a href="${albumUrl}" download><button type="button">⬇ Скачать альбом (.zip)</button></a></p>` : '')
+        + `<p><button type="button" class="secondary" id="close-room">Закрыть комнату и удалить фото</button></p>`;
+    }
+
+    function renderShowcase() {
+      const show = state.showcase;
+      $('#showcase').hidden = !show;
+      if (!show) return;
+      const src = `${show.url}?token=${encodeURIComponent(room.host_token)}`;
+      if ($('#showcase-img').dataset.src !== src) {
+        $('#showcase-img').src = src;
+        $('#showcase-img').dataset.src = src;
+      }
+      $('#showcase-title').textContent = `📸 ${nameOf(show.player_id)}: ${show.title}`;
+      const item = (state.gallery || []).find(entry => entry.photo_id === show.photo_id);
+      $('#showcase-reactions').textContent = item
+        ? Object.entries(item.reactions).map(([emoji, count]) => `${emoji} ${count}`).join('   ')
+        : '';
+    }
+
+    function render(next) {
+      const firstRender = state === null;
+      state = next;
+      if (firstRender) fillSettings(state.settings);
+      renderLobby();
+      renderAi();
+      renderGame();
+      renderResults();
+      renderShowcase();
+    }
+
+    function openRoom(roomId, hostToken, initialState) {
+      room = { room_id: roomId, host_token: hostToken };
+      $('#setup').hidden = true;
+      $('#room-id').textContent = roomId;
+      const qs = `room_id=${encodeURIComponent(roomId)}&host_token=${encodeURIComponent(hostToken)}`;
+      $('#dealer-qr').src = `/api/qr/dealer.png?${qs}`;
+      $('#players-qr').src = `/api/qr/players.png?${qs}`;
+      render(initialState);
+      channel = window.Chaos.connect(hostToken, message => {
+        if (message.type === 'state') render(message.payload);
+        else if (message.type === 'ability_used') toast(state.feed[state.feed.length - 1] || 'Способность использована');
+        else if (message.type === 'event_revealed') { shakeScreen(); window.Chaos.sound('event'); toast(`${message.payload.icon || '⚡'} Событие: ${message.payload.title}`); }
+        else if (message.type === 'event_vetoed') toast(`🚫 Вето! Событие отменено`);
+        else if (message.type === 'decree') { shakeScreen(); toast(`📜 Указ: ${message.payload.title}`); }
+        else if (message.type === 'dealer_comment') {
+          // Optional voice of the judge via the browser speech synthesis (section 8.2).
+          if ($('#speak').checked && 'speechSynthesis' in window) {
+            const phrase = new SpeechSynthesisUtterance(message.payload.text);
+            phrase.lang = 'ru-RU';
+            speechSynthesis.speak(phrase);
+          }
+        }
+        else if (message.type === 'activity_started') { shakeScreen(); toast(`💪 ${message.payload.title}!`); }
+        else if (message.type === 'activity_result') toast(message.payload.text);
+        else if (message.type === 'reaction') {
+          const pop = document.createElement('span');
+          pop.textContent = message.payload.emoji;
+          pop.style.cssText = 'position:fixed;bottom:20%;left:' + (20 + Math.random() * 60) + '%;font-size:3rem;z-index:41;transition:transform .5s,opacity .5s';
+          document.body.appendChild(pop);
+          requestAnimationFrame(() => { pop.style.transform = 'translateY(-120px)'; pop.style.opacity = '0'; });
+          setTimeout(() => pop.remove(), 500);
+        }
+        else if (message.type === 'task_result') toast(message.payload.accepted ? '✅ Задание засчитано' : '❌ Задание не засчитано');
+      }, {
+        onUnauthorized() {
+          localStorage.removeItem(TOKEN_KEY);
+          location.reload();
+        },
+      });
+    }
+
+    $('#dealer-qr').addEventListener('error', () => { $('#dealer-qr-box').hidden = true; });
+    $('#players-qr').addEventListener('error', () => { $('#players-qr-box').hidden = true; });
+
+    $('#create-form').addEventListener('submit', async event => {
+      event.preventDefault(); error.textContent = '';
+      const response = await fetch('/api/rooms', { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({host_name: $('#host-name').value}) });
+      if (!response.ok) { error.textContent = 'Не удалось создать игру'; return; }
+      const created = await response.json();
+      localStorage.setItem(TOKEN_KEY, created.host_token);
+      openRoom(created.room_id, created.host_token, created.state);
+    });
+
+    $('#apply-settings').addEventListener('click', async () => {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(room.room_id)}/settings?host_token=${encodeURIComponent(room.host_token)}`, {
+        method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(readSettings()),
+      });
+      error.textContent = response.ok ? '' : 'Не удалось применить настройки — проверьте значения';
+      if (response.ok) toast('Настройки сохранены');
+    });
+
+    $('#start-game').addEventListener('click', async () => {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(room.room_id)}/start`, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({host_token: room.host_token}) });
+      if (!response.ok) { error.textContent = 'Нужно минимум два игрока'; return; }
+      error.textContent = '';
+    });
+
+    document.addEventListener('click', async event => {
+      if (event.target.id !== 'close-room') return;
+      if (!confirm('Закрыть комнату? Все фото, кроме альбома, будут удалены.')) return;
+      await fetch(`/api/rooms/${encodeURIComponent(room.room_id)}/close`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host_token: room.host_token }),
+      });
+      localStorage.removeItem(TOKEN_KEY);
+      location.href = '/host';
+    });
+
+    window.Chaos.bindSoundToggle($('#sound-toggle'));
+    $('#ai-check').addEventListener('click', async () => {
+      $('#ai-status').textContent = 'проверяем…';
+      const response = await fetch('/api/ai/check', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host_token: room.host_token }),
+      });
+      const data = await response.json().catch(() => ({}));
+      toast(data.message || 'Не удалось проверить ИИ', data.ready ? 'info' : 'error');
+    });
+    try { $('#speak').checked = localStorage.getItem('chaos_speak') === '1'; } catch {}
+    $('#speak').addEventListener('change', () => {
+      try { localStorage.setItem('chaos_speak', $('#speak').checked ? '1' : '0'); } catch {}
+    });
+    $('#host-activity-btn').addEventListener('click', () => channel?.send('dealer_start_activity', { type: $('#host-activity-type').value }));
+    $('#pause-btn').addEventListener('click', () => channel?.send(state.paused ? 'host_resume' : 'host_pause'));
+    $('#end-btn').addEventListener('click', () => {
+      if (confirm('Завершить игру для всех?')) channel?.send('host_end');
+    });
+
+    (async () => {
+      // A host link from run.py carries ?token=<host_token>; otherwise restore from this device.
+      const urlToken = new URLSearchParams(location.search).get('token');
+      const saved = urlToken || localStorage.getItem(TOKEN_KEY);
+      if (!saved) return;
+      const response = await fetch(`/api/session?token=${encodeURIComponent(saved)}`);
+      if (!response.ok) { localStorage.removeItem(TOKEN_KEY); return; }
+      const data = await response.json();
+      if (data.role !== 'host') return;
+      localStorage.setItem(TOKEN_KEY, saved);
+      openRoom(data.room_id, saved, data.state);
+    })();
+  </script>
+</body>
+</html>
